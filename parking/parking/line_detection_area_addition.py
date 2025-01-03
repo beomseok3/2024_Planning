@@ -27,15 +27,17 @@ class PARKING(Node):
             Odometry, "localization/kinematic_state", self.callback_local, qos_profile
         )
         
-        self.sub_flag = self.create_subscription(
-            String, "flag", self.callback_flag, qos_profile
-        )
+        # self.sub_flag = self.create_subscription(
+        #     String, "flag", self.callback_flag, qos_profile
+        # )
         
-        self.pub_gear = self.create_publisher(Int32, "gear", qos_profile)
+        # self.pub_gear = self.create_publisher(Int32, "gear", qos_profile)
         
         self.pub_path = self.create_publisher(Path, "path", qos_profile)
         
+        self.path_timer = self.create_timer(0.5,self.path_publisher)
         
+        self.marker_tiemr = self.create_timer(1,self.marker)
 
         self.pub_marker = self.create_publisher(MarkerArray, "cone_marker", qos_profile)
 
@@ -52,24 +54,31 @@ class PARKING(Node):
         self.origin = np.array([])
         self.path_x = []
         self.path_y = []
+        self.ds = 0.8
         self.path = []
         self.min_x = 0.0
         self.min_y = 0.0
         self.max_x = 0.0
         self.max_y = 0.0
-        self.r = 6.0
-        self.ilocal_x = 0.0
-        self.ilocal_y = 0.0
-        self.iangle = 0.0
-        self.flocal_x = 0.0
-        self.flocal_y = 0.0
-        self.fangle = 0.0
+        self.r = 6.03
+        self.dangle = 0
+        self.dlocal_x = 0
+        self.dlocal_y = 0
         self.local_x = 0.0
         self.local_y = 0.0
         self.angle = 0
-        self.flag_ = 0
-        self.flag =""
+        # self.flag_ = 0
+        # self.flag =""
+        self._a,self._b,self._c = 0,0,0
         
+    def marker(self):
+        self.publish_markers()
+        self.publish_markers_()
+        
+    def path_publisher(self):
+        if self.path:
+            self.publish_path()
+            
     def callback_cone(self, msg):
         for pose_x, pose_y in [
             (pose.position.x, pose.position.y) for pose in msg.poses
@@ -87,66 +96,16 @@ class PARKING(Node):
                 else:
                     continue
             else:
-                return
+                continue
+            
     def callback_local(self, msg):
-        if len(self.cone) >= self.num_cones:
-            if self.i < 2:  # Ensure there are 17 cones
+        if 3 < len(self.cone) <= self.num_cones:
                 self.handle_localization(msg)
-                self.i += 1
-            else:
-                if self.flag_ == 0:
-                    self.publish_path()
-                else:
-                    if not m.sqrt((self.local_x-msg.pose.pose.position.x)**2+(self.local_y-msg.pose.pose.position.y)**2) > 3.0:
-                        path_3 = Path()
-                        path_3.header = Header()
-                        path_3.header.stamp = self.get_clock().now().to_msg()
-                        path_3.header.frame_id = "map"
-                        for i in range(0,5):
-                            pose = PoseStamped()
-                            pose.header.stamp = self.get_clock().now().to_msg()
-                            pose.header.frame_id = "map"
-                            a=msg.pose.pose.orientation
-                            _,_,yaw = euler_from_quaternion([a.x,a.y,a.z,a.w])
-                            b=self.rotate_points(np.array([((msg.pose.pose.position.x+i,msg.pose.pose.position.y))]),-yaw, np.array([msg.pose.pose.position.x,msg.pose.pose.position.y])).tolist()
-                            pose.pose.position.x = float(b[0][0])
-                            pose.pose.position.y = float(b[0][1])
-                            pose.pose.position.z = 0.0
-                            pose.pose.orientation.x = a.x
-                            pose.pose.orientation.y = a.y
-                            pose.pose.orientation.z = a.z
-                            pose.pose.orientation.w = a.w
-                            path_3.poses.append(pose)
-                        self.pub_path.publish(path_3)
-                    else:
-                        self. publish_path()
         else:
-            self.gear_publisher(2)
-            go_path = Path()
-            go_path.header = Header()
-            go_path.header.stamp = self.get_clock().now().to_msg()
-            go_path.header.frame_id = "map"
-            for i in range(0,10):
-                pose = PoseStamped()
-                pose.header.stamp = self.get_clock().now().to_msg()
-                pose.header.frame_id = "map"
-                a=msg.pose.pose.orientation
-                _,_,yaw = euler_from_quaternion([a.x,a.y,a.z,a.w])
-                b=self.rotate_points(np.array([((msg.pose.pose.position.x+i,msg.pose.pose.position.y))]),-yaw, np.array([msg.pose.pose.position.x,msg.pose.pose.position.y])).tolist()
-                pose.pose.position.x = float(b[0][0])
-                pose.pose.position.y = float(b[0][1])
-                pose.pose.position.z = 0.0
-                
-                pose.pose.orientation.x = 0.0
-                pose.pose.orientation.y = 0.0
-                pose.pose.orientation.z = msg.pose.pose.orientation.z
-                pose.pose.orientation.w = msg.pose.pose.orientation.w
-                go_path.poses.append(pose)
-            self.pub_path.publish(go_path)
-            if 1 < len(self.cone) <= 3:  # Ensure there are 3 cones
-                self.handle_final_localization(msg)
-            elif len(self.cone) <= 1:  # Ensure there is at least 1 cone
-                self.handle_initial_localization(msg)
+                                            # self.gear_publisher(2)
+                                            # #global_path_publish _til_target_idx is_end. after end local_path will be published
+            if len(self.cone) <= 3:
+                self.handle_detection_localization(msg)
 
     def handle_localization(self, msg):
         self.local_x = msg.pose.pose.position.x
@@ -164,42 +123,31 @@ class PARKING(Node):
         )
         self.indexing(rotated_points)
 
-    def handle_final_localization(self, msg):
-        self.flocal_x = msg.pose.pose.position.x
-        self.flocal_y = msg.pose.pose.position.y
+    def handle_detection_localization(self, msg):
+        self.dlocal_x = msg.pose.pose.position.x
+        self.dlocal_y = msg.pose.pose.position.y
         quarternion = [
             0,
             0,
             msg.pose.pose.orientation.z,
             msg.pose.pose.orientation.w,
         ]
-        _, _, self.fangle = euler_from_quaternion(quarternion)
+        _, _, self.dangle = euler_from_quaternion(quarternion)
 
-    def handle_initial_localization(self, msg):
-        self.ilocal_x = msg.pose.pose.position.x
-        self.ilocal_y = msg.pose.pose.position.y
-        quarternion = [
-            0,
-            0,
-            msg.pose.pose.orientation.z,
-            msg.pose.pose.orientation.w,
-        ]
-        _, _, self.iangle = euler_from_quaternion(quarternion)
-        
-    def callback_flag(self,msg):
-        self.flag = msg.data
+    # def callback_flag(self,msg):
+    #     self.flag = msg.data
 
-    def gear_publisher(self,gear):
-        msg = Int32()
-        msg. data = gear
-        self.pub_gear.publish(msg)
-        self.get_logger().info(f"\ngear = {gear}\n")
+    # def gear_publisher(self,gear):
+    #     msg = Int32()
+    #     msg. data = gear
+    #     self.pub_gear.publish(msg)
+    #     self.get_logger().info(f"\ngear = {gear}\n")
         
     def detection_area(self, p1):
         if len(self.cone) <= 3:
             if p1 != None:
                 dis = m.sqrt(
-                    (self.ilocal_x - p1[0]) ** 2 + (self.ilocal_y - p1[1]) ** 2
+                    (self.dlocal_x - p1[0]) ** 2 + (self.dlocal_y - p1[1]) ** 2
                 )
                 if dis <= self.r:
                     if len(self.cone) == 3:
@@ -211,7 +159,7 @@ class PARKING(Node):
 
         else:
             p1_ = self.rotate_points(
-                p1, self.fangle, np.array([self.flocal_x, self.flocal_y])
+                p1, self._c, np.array([self._a, self._b])
             )
             if self.min_x < p1_[0] < self.max_x and self.min_y < p1_[1] < self.max_y:
                 return True
@@ -219,24 +167,25 @@ class PARKING(Node):
 
     def compute_detection_area(self):
         dis = []
+        self._a,self._b,self._c =self.dlocal_x,self.dlocal_y,self.dangle
         for i in range(3):
             dis.append(
                 m.sqrt(
-                    (self.flocal_x - self.cone[i][0]) ** 2
-                    + (self.flocal_y - self.cone[i][1]) ** 2
+                    (self.dlocal_x - self.cone[i][0]) ** 2
+                    + (self.dlocal_y - self.cone[i][1]) ** 2
                 )
             )
         low_dis_idx = dis.index(min(dis))
         low_dis_cone = self.cone[low_dis_idx]
-        self.first_rot_point = self.rotate_points(
+        self.low_dis_rot_point = self.rotate_points(
             low_dis_cone,
-            self.fangle,
-            np.array([self.flocal_x, self.flocal_y]),
+            self.dangle,
+            np.array([self.dlocal_x, self.dlocal_y]),
         )
-        self.min_x = self.first_rot_point[0] - 1
-        self.max_x = self.first_rot_point[0] + 15
-        self.min_y = self.first_rot_point[1] - 4
-        self.max_y = self.first_rot_point[1] + 1
+        self.min_x = self.low_dis_rot_point[0] - 1
+        self.max_x = self.low_dis_rot_point[0] + 15
+        self.min_y = self.low_dis_rot_point[1] - 3.8
+        self.max_y = self.low_dis_rot_point[1] + 1
 
     def indexing(self, data):
         # Cluster data based on y values only
@@ -258,7 +207,7 @@ class PARKING(Node):
 
         # Add sorted cluster labels to the original data
         clustered_data_y_sorted = np.hstack((data, sorted_labels_y.reshape(-1, 1)))
-
+        
         # Convert to DataFrame for better display
         clustered_data_y_sorted_df = pd.DataFrame(
             clustered_data_y_sorted, columns=["X", "Y", "Cluster"]
@@ -286,142 +235,157 @@ class PARKING(Node):
             .sort_values(by="X")
             .values.tolist()
         )
+        if len(cluster_2) >= 2:
+            for i in range(len(cluster_2) - 1):
+                self.dis.append(cluster_2[i + 1][0] - cluster_2[i][0])
+            max_dis_idx = self.dis.index(max(self.dis))
+            if max(self.dis) > 4:
+                if max_dis_idx == 0:
+                    self.get_logger().info("case1")
+                    alpha = abs(self.local_y - cluster_2[3][1])
+                    self.domain.extend(
+                        [
+                            (cluster_1[0][0] + 1, cluster_1[0][1]),
+                            
+                            
+                            (
+                                cluster_2[2][0] - (alpha - 0.08) - 1.25,
+                                cluster_2[2][1] - 1.15,
+                            ),
+                            
+                            (
+                                cluster_2[2][0] - (alpha - 0.08) - 0.75,
+                                self.local_y - 0.08 - (alpha - 0.08),
+                            ),
+                            (
+                                cluster_2[2][0] - 0.5 - (alpha - 0.08) / 2,
+                                self.local_y
+                                - 0.08
+                                - (1 - m.sqrt(3) / 2) * (alpha - 0.08)
+                                - 0.25,
+                            ),
+                            
+                            
+                            (cluster_2[2][0], self.local_y - 0.08),
+                            (cluster_2[3][0], self.local_y),
+                            (self.local_x + 2, self.local_y),
+                        ]
+                    )
+                    points = np.array(self.domain)
+                    self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
+                    self.path_x = self.rotated_domain[:, 0]
+                    self.path_y = self.rotated_domain[:, 1]
+                    self.interpolate_path()
 
-        for i in range(9):
-            self.dis.append(cluster_2[i + 1][0] - cluster_2[i][0])
-        max_dis_idx = self.dis.index(max(self.dis))
+                elif max_dis_idx == 4:
+                    self.get_logger().info("case2")
+                    
+                    alpha = self.local_y - cluster_2[6][1]
+                    
+                    self.domain.extend(
+                        [
+                            (cluster_1[1][0] + 1, cluster_1[1][1]),
+                            
+                            
+                            (
+                                cluster_2[6][0] - (alpha - 0.08) - 1.25,
+                                cluster_2[6][1] - 1.15,
+                            ),
+                            
+                            (
+                                cluster_2[6][0] - (alpha - 0.08) - 0.75,
+                                self.local_y - 0.08 - (alpha - 0.08),
+                            ),
+                            (
+                                cluster_2[6][0] - 0.5 - (alpha - 0.08) / 2,
+                                self.local_y
+                                - 0.08
+                                - (1 - m.cos(m.pi/6)) * (alpha - 0.08)
+                                - 0.25,
+                            ),
+                            
+                            
+                            (cluster_2[6][0], self.local_y - 0.08),
+                            (cluster_2[7][0], self.local_y),
+                            (self.local_x + 2, self.local_y),
+                        ]
+                    )
+                    points = np.array(self.domain)
+                    self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
+                    self.path_x = self.rotated_domain[:, 0]
+                    self.path_y = self.rotated_domain[:, 1]
+                    self.interpolate_path()
 
-        if max_dis_idx == 0:
-            self.get_logger().info("case1")
-            alpha = abs(self.local_y - cluster_2[3][1])
-            self.domain.extend(
-                [
-                    (cluster_1[0][0] + 1, cluster_1[0][1]),
-                    
-                    
-                    (
-                        cluster_2[2][0] - (alpha - 0.08) - 1.25,
-                        cluster_2[2][1] - 1.15,
-                    ),
-                    
-                    (
-                        cluster_2[2][0] - (alpha - 0.08) - 0.75,
-                        self.local_y - 0.08 - (alpha - 0.08),
-                    ),
-                    (
-                        cluster_2[2][0] - 0.5 - (alpha - 0.08) / 2,
-                        self.local_y
-                        - 0.08
-                        - (1 - m.sqrt(3) / 2) * (alpha - 0.08)
-                        - 0.25,
-                    ),
-                    
-                    
-                    (cluster_2[2][0], self.local_y - 0.08),
-                    (cluster_2[3][0], self.local_y),
-                    (self.local_x + 2, self.local_y),
-                ]
-            )
-            points = np.array(self.domain)
-            self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
-            self.path_x = self.rotated_domain[:, 0]
-            self.path_y = self.rotated_domain[:, 1]
-            self.interpolate_path()
-
-        elif max_dis_idx == 4:
-            self.get_logger().info("case2")
+                elif max_dis_idx == 8:
+                    self.get_logger().info("case3")
+                    alpha = abs(self.local_y - cluster_2[4][1])
+                    self.domain.extend(
+                        [
+                            (cluster_1[2][0] + 1, cluster_1[2][1]),
+                            
+                            
+                            (
+                                cluster_2[9][0]+1.25 - (alpha - 0.08) - 1.25,
+                                cluster_2[9][1] - 1.15,
+                            ),
+                            
+                            (
+                                cluster_2[9][0]+1.25 - (alpha - 0.08) - 0.75,
+                                self.local_y - 0.08 - (alpha - 0.08),
+                            ),
+                            (
+                                cluster_2[9][0] + 1.25 - 0.5 - (alpha - 0.08) / 2,
+                                self.local_y
+                                - 0.08
+                                - (1 - m.sqrt(3) / 2) * (alpha - 0.08)
+                                - 0.25,
+                            ),
+                            
+                            
+                            (cluster_2[9][0] +1.25, self.local_y - 0.08),
+                            (cluster_2[9][0], self.local_y),
+                            (self.local_x + 2, self.local_y),
+                        ]
+                    )
+                    points = np.array(self.domain)
+                    self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
+                    self.path_x = self.rotated_domain[:, 0]
+                    self.path_y = self.rotated_domain[:, 1]
+                    self.interpolate_path_()
+                else:
+                    self.get_logger().fatal("prediction_error")
             
-            alpha = self.local_y - cluster_2[6][1]
-            
-            self.domain.extend(
-                [
-                    (cluster_1[1][0] + 1, cluster_1[1][1]),
-                    
-                    
-                    (
-                        cluster_2[6][0] - (alpha - 0.08) - 1.25,
-                        cluster_2[6][1] - 1.15,
-                    ),
-                    
-                    (
-                        cluster_2[6][0] - (alpha - 0.08) - 0.75,
-                        self.local_y - 0.08 - (alpha - 0.08),
-                    ),
-                    (
-                        cluster_2[6][0] - 0.5 - (alpha - 0.08) / 2,
-                        self.local_y
-                        - 0.08
-                        - (1 - m.cos(m.pi/6)) * (alpha - 0.08)
-                        - 0.25,
-                    ),
-                    
-                    
-                    (cluster_2[6][0], self.local_y - 0.08),
-                    (cluster_2[7][0], self.local_y),
-                    (self.local_x + 2, self.local_y),
-                ]
-            )
-            points = np.array(self.domain)
-            self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
-            self.path_x = self.rotated_domain[:, 0]
-            self.path_y = self.rotated_domain[:, 1]
-            self.interpolate_path()
-
-        else:
-            self.get_logger().info("case3")
-            self.flag_ = 1
-            alpha = abs(self.local_y - cluster_2[4][1])
-            self.domain.extend(
-                [
-                    (cluster_1[3][0] + 1, cluster_1[3][1]),
-                    
-                    
-                    (
-                        cluster_2[9][0]+1.25 - (alpha - 0.08) - 1.25,
-                        cluster_2[9][1] - 1.15,
-                    ),
-                    
-                    (
-                        cluster_2[9][0]+1.25 - (alpha - 0.08) - 0.75,
-                        self.local_y - 0.08 - (alpha - 0.08),
-                    ),
-                    (
-                        cluster_2[9][0] + 1.25 - 0.5 - (alpha - 0.08) / 2,
-                        self.local_y
-                        - 0.08
-                        - (1 - m.sqrt(3) / 2) * (alpha - 0.08)
-                        - 0.25,
-                    ),
-                    
-                    
-                    (cluster_2[9][0] +1.25, self.local_y - 0.08),
-                    (cluster_2[9][0], self.local_y),
-                    (self.local_x + 2, self.local_y),
-                ]
-            )
-            points = np.array(self.domain)
-            self.rotated_domain = self.rotate_points(points, -self.angle, self.origin)
-            self.path_x = self.rotated_domain[:, 0]
-            self.path_y = self.rotated_domain[:, 1]
-            self.interpolate_path_()
-        
     def interpolate_path(self):
         x = np.array(self.path_x)
         y = np.array(self.path_y)
-        t = np.arange(len(x))  # Use indices as parameter t
-
+        dx_ = np.diff(x)
+        dy_ = np.diff(y)
+        ds =np.sqrt(dx_**2+dy_**2)
+        s = np.concatenate([[0], np.cumsum(ds)])
         try:
-            cs_x = CubicSpline(t, x, bc_type="natural")
-            cs_y = CubicSpline(t, y, bc_type="natural")
+            cs_x = CubicSpline(s, x, bc_type="natural")
+            cs_y = CubicSpline(s, y, bc_type="natural")
+            
+            self.narrow = int(s[-1] / self.ds)
+            self.get_logger().info(f"path:{self.narrow}. length = {(self.narrow-1) * 0.8} ")
+            
+            
+            s_new = np.linspace(s[0], s[-1], 150)
+            x_new = cs_x(s_new)
+            y_new = cs_y(s_new)
 
-            t_new = np.linspace(t[0], t[-1], 150)
-            x_new = cs_x(t_new)
-            y_new = cs_y(t_new)
-
-            dx_new = cs_x(t_new, 1)
-            dy_new = cs_y(t_new, 1)
+            dx_new = cs_x(s_new, 1)
+            dy_new = cs_y(s_new, 1)
 
             yaw_new = [m.atan2(dy, dx) for dy, dx in zip(dy_new, dx_new)]
+            for i in range(len(yaw_new)):
+                dyaw_new = []
+                dyaw_new.append(yaw_new[i+1] - yaw_new[i])
+            print(dyaw_new)
+            dyaw_new = np.array(dyaw_new)
+            print(dyaw_new)
+            a=dyaw_new > 0.233 # 13.4(deg)
+            print(any(a))
             self.path = list(zip(x_new.tolist(), y_new.tolist(), yaw_new))
         except Exception as e:
             self.get_logger().error(
@@ -432,10 +396,7 @@ class PARKING(Node):
         self.publish_markers()
         self.publish_markers_()
         self.publish_domain()
-        if self.flag == "done":
-            self.gear_publisher(2)
-        else:
-            self.gear_publisher(0)
+        # self.gear_publisher(0)
         
         path = Path()
         path.header = Header()
@@ -473,7 +434,7 @@ class PARKING(Node):
         return rotated_points
 
     def euclidean_duplicate(self, p1):
-        threshold = 0.5
+        threshold = 0.8
         for p2 in self.cone:
             distance = m.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
             if distance <= threshold:
@@ -520,7 +481,7 @@ class PARKING(Node):
             (x, y) for x in [self.min_x, self.max_x] for y in [self.min_y, self.max_y]
         ]
         rotated_area = self.rotate_points(
-            np.array(area), -self.fangle, np.array([self.flocal_x, self.flocal_y])
+            np.array(area), -self.dangle, np.array([self.dlocal_x, self.dlocal_y])
         )
 
         for i, (x, y) in enumerate(rotated_area):

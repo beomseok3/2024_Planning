@@ -28,7 +28,7 @@ class DB_READER(Node):
         db_file = "example.db"
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM Path")
+        cursor.execute("SELECT * FROM data")
         rows = cursor.fetchall()
         print(rows)
         for row in rows:
@@ -41,8 +41,8 @@ class DB_READER(Node):
         path.header = Header()
         path.header.stamp = self.get_clock().now().to_msg()
         path.header.frame_id = "map"
-        for idx,id, x, y, yaw in self.db:
-            if id == "b2c1":
+        for id,x, y, yaw in self.db:
+            # if id == "b2c1":
                 pose = PoseStamped()
                 pose.header.stamp = self.get_clock().now().to_msg()
                 pose.header.frame_id = "map"
@@ -55,8 +55,8 @@ class DB_READER(Node):
                 pose.pose.orientation.z = quaternion[2]
                 pose.pose.orientation.w = quaternion[3]
                 path.poses.append(pose)
-            else:
-                continue
+            # else:
+            #     continue
             
         self.pub_path.publish(path)
 

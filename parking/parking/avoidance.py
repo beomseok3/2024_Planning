@@ -3,18 +3,14 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 import numpy as np
 import math as m
-import matplotlib.pyplot as plt
 
-from geometry_msgs.msg import PoseArray , PoseStamped
+from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import MarkerArray,Marker
 from std_msgs.msg import Header, String
-from adaptive_clustering_msgs.msg import ClusterArray
-from sensor_msgs.msg import PointField
 from tf_transformations import *
 
 from nav_msgs.msg import Path, Odometry
 
-import struct
 from scipy.interpolate import CubicSpline
 
 class AVOIDANCE(Node):
@@ -39,7 +35,7 @@ class AVOIDANCE(Node):
         self.sub_local = self.create_subscription(
             Odometry, "localization/kinematic_state", self.path_tf, qos_profile
         )
-        self.pub_done = self.create_publisher(String,"done",qos_profile)
+        self.pub_parking_flag = self.create_publisher(String,"parking_flag",qos_profile)
         
         #detection
         self.max_x = 0
@@ -72,7 +68,7 @@ class AVOIDANCE(Node):
             center = ((max_x + min_x)/2,(max_y + min_y)/2)
             length = m.sqrt(center[0]**2 + center[1]**2)
             width = abs(max_y-min_y)
-            if width > 2.5 and length < 25:
+            if width > 0.9 and length < 25:
                 self.max_x = marker.points[0].x
                 self.max_y = marker.points[0].y
                 self.min_x = marker.points[1].x
@@ -92,38 +88,47 @@ class AVOIDANCE(Node):
             if  self. j< 1:
                 self.orientatioin = yaw
                 self.minus_tf(translation,yaw)
+                print("1")
                 self.publish_path()
             else:
                 if self. j == 1:
-                    if m.sqrt((self.minus_path[-1][0] - translation[0])**2 + (self.minus_path[-1][1] - translation[1])**2) < 2.0:
+                    if m.sqrt((self.minus_path[-1][0] - translation[0])**2 + (self.minus_path[-1][1] - translation[1])**2) < 0.5:
                         self.get_logger().info("done")
                         self.j += 1
                         self.path = np.array([])
                         self.minus_path.clear()
                         self.domain.clear()
                         return
+                    print("2")
                     self. publish_path()
                 elif self.k < 1 and self.j == 2 : #and (yaw - self.orientatioin) < 5 굳이 필요 없어 보임
                     self.plus_tf(translation,yaw)
                 elif self.k ==1:
+                    print("3")
                     self.publish_path()
                     if m.sqrt((translation[0]-self.plus_path[-1][0])**2 + (translation[1]-self.plus_path[-1][1])**2) < 1.0:
                         msg = String()
-                        msg.data = "done"
-                        self.pub_done.publish(msg)
+                        msg.data = "end"
+                        self.pub_parking_flag.publish(msg)
         else:
             pass
                         
     def minus_tf(self,translation,yaw):
         self.get_logger().info("minus_path")
-        
+        '''
+                (3.0,0),(4,-0.25),(5,-0.75),
+                (7.0,-1.0),(8.0,-1.25)
+                '''
     
         self.domain.extend(
-            [ (0,0),(1.0,0),(2.0,0),
-                (3.0,0),(4,-0.25),(5,-0.75),
-                (7.0,-1.0),(8.0,-1.25), 
+            [ (0,0),(2,-0.25),(2.25,-0.5),
+            (self.min_x -2,self. min_y -2),
                 (self.min_x,self.min_y - 2),
-                (self.min_x + 1,self.min_y -2),
+                (self.min_x + 1.0,self.min_y -2.0),
+                (self.min_x + 2.0,self.min_y -2.0),
+                (self.min_x + 3.0,self.min_y -2.0),
+                
+                
             ]
         
         )
@@ -154,9 +159,8 @@ class AVOIDANCE(Node):
     def plus_tf(self,translation,yaw):
         self.get_logger().info("plus_path")
         self.domain.extend(
-            [ (0,0),(1.0,0.0),(2.0,0.0),(4.0,0.0),
-                (5.0,0.25),(6.0,0.75),
-                (7.0,1.25), 
+            [ (0,0),
+                (self.min_x-0.1,self.max_y -0.2),
                 (self.min_x,self.max_y + 1.75),
                 (self.min_x + 1,self.max_y + 1.75),
             ]
@@ -280,9 +284,9 @@ class AVOIDANCE(Node):
             marker.pose.orientation.y = 0.0
             marker.pose.orientation.z = 0.0
             marker.pose.orientation.w = 1.0
-            marker.scale.x = 0.2
-            marker.scale.y = 0.2
-            marker.scale.z = 0.2
+            marker.scale.x = 1.0
+            marker.scale.y = 1.0
+            marker.scale.z = 1.0
             marker.color.a = 1.0
             marker.color.r = 1.0
             marker.color.g = 0.0

@@ -113,14 +113,21 @@ class DBWRITE(Node):
 
 
 def main(args=None):
+    
     rclpy.init(args=args)
+    print(args)
     node = DBWRITE()
+    print(args)
     try:
+        print(args)
         rclpy.spin(node)
+        print(args)
     except KeyboardInterrupt:
         pass
     finally:
+        print(args)
         node.destroy_node()
+        print(args)
         rclpy.shutdown()
 
 
