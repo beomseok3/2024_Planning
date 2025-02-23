@@ -1,6 +1,7 @@
 # db_structures
 
-table Node
+**table Node**
+
 start_idx/ end_idx/ id / mission_state / position (path_planning에 사용하진 않음)
 
 table Path
@@ -10,7 +11,8 @@ idx / id / x / y / yaw
 idx / id / x / y / yaw
 ...
 
-다른 노드에 진입 --> mission_state check
+// 다른 노드에 진입 --> mission_state check
+
 A1 Start_point: position 
 	 index: 0
 A2 avoidance_start:     position:
@@ -36,16 +38,21 @@ B1 avoidance_end:     position:
 C2 End_point: positon :?
 	index -1
 
-path 분할을 idx 기준으로 해보자
- Node 좌표 이상하다
-1. path  분할 idx changing
+# path 분할을 idx 기준으로 해보자
+
+Node 좌표 이상하다
+ 
+1. path  분할 idx changing	
+
 2. logic 추가 , parameter pub(근데 그냥 코드를 하나에 다 합치면 되기도 함)
+
 3. node 추가
 ----------------------------------------------------------------------
 
 **2024_acca_statemachine_초안** 
 
-from 2022보고 내가 idea만 비슷하게 구현
+from 2022 보고 내가 idea만 비슷하게 구현
+
 왜 안쓰게 되었는가?
 
 1.큰그림을 그리는데 배경지식이 부족
